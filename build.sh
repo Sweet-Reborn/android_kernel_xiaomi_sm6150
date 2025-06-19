@@ -80,7 +80,7 @@ if [ ! -f "$kernel" ] || [ ! -f "$dtbo" ] || [ ! -f "$dtb" ]; then
 	exit 1
 fi
 
-if [ "$suonly" = true ]; then
+if [ "$suonly" = true ] || [ "$local" = true ]; then
 	echo -e "\nNot compiling NSU image..."
 	echo -e "\nKernel compiled successfully! Zipping up...\n"
 	if [ -d "$AK3_DIR" ]; then
@@ -121,8 +121,8 @@ mkdir ./out/arch/arm64/boot/ksu/
 cp $kernel out/arch/arm64/boot/ksu/Image.gz
 ksuboot="out/arch/arm64/boot/ksu/Image.gz"
 rm -rf $kernel
-patch -p1 < disable_ksu.patch
-make O=out ARCH=arm64 sweet_defconfig
+make O=out mrproper
+make O=out ARCH=arm64 nsu_sweet_defconfig
 make -j$(nproc --all) \
     O=out \
     ARCH=arm64 \
