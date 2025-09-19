@@ -48,8 +48,27 @@ else
 	echo "Local clang dir found, will not download clang and using that instead"
 fi
 
-export PATH="$PWD/clang/bin/:$PATH"
-export KBUILD_COMPILER_STRING="$($PWD/clang/bin/clang --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')"
+if [ ! -d "$PWD/gcc32" ] && [ ! -d "$PWD/gcc64" ]; then
+       ASSET_URLS=$(curl -s "https://api.github.com/repos/mvaisakh/gcc-build/releases/latest" | grep "browser_download_url" | cut -d '"' -f 4 | grep -E "eva-gcc-arm.*\.xz")
+       for url in $ASSET_URLS; do
+               wget --content-disposition -L "$url"
+       done
+       for file in eva-gcc-arm*.xz; do
+               #The files are actually just plain tarballs named as .xz, do not call xz to decompress
+               if [[ "$file" == *arm64* ]]; then
+                       tar -xf "$file" && mv gcc-arm64 gcc64
+               else
+                       tar -xf "$file" && mv gcc-arm gcc32
+               fi
+       rm -rf "$file"
+       done
+else
+       echo "Local gcc dirs found, will not download clang and using those instead"
+fi
+
+export GCC64_DIR=$PWD/gcc64
+export GCC32_DIR=$PWD/gcc32
+export PATH="$PWD/clang/bin/:$GCC64_DIR/bin/:$GCC32_DIR/bin/:/usr/bin:$PATH"
 
 #if [ "$local" = true ]; then
 #	echo -e "\nLocal build, disabling LTO...\n"
@@ -68,8 +87,8 @@ make -j$(nproc --all) \
     ARCH=arm64 \
     LLVM=1 \
     LLVM_IAS=1 \
-    CROSS_COMPILE=aarch64-linux-gnu- \
-    CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+    CROSS_COMPILE=$GCC64_DIR/bin/aarch64-elf- \
+    CROSS_COMPILE_COMPAT=$GCC32_DIR/bin/arm-eabi-
 
 kernel="out/arch/arm64/boot/Image.gz"
 dtbo="out/arch/arm64/boot/dtbo.img"
@@ -128,8 +147,8 @@ make -j$(nproc --all) \
     ARCH=arm64 \
     LLVM=1 \
     LLVM_IAS=1 \
-    CROSS_COMPILE=aarch64-linux-gnu- \
-    CROSS_COMPILE_COMPAT=arm-linux-gnueabi
+    CROSS_COMPILE=$GCC64_DIR/bin/aarch64-elf- \
+    CROSS_COMPILE_COMPAT=$GCC32_DIR/bin/arm-eabi-
 
 if [ ! -f "$kernel" ]; then
 	echo -e "\nCompilation failed!"
