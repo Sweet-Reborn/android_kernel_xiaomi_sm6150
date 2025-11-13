@@ -21,6 +21,7 @@
 #include <linux/mm.h>
 #include <linux/msm_adreno_devfreq.h>
 #include <asm/cacheflush.h>
+#include <drm/drm_refresh_rate.h>
 #include <soc/qcom/scm.h>
 #include "governor.h"
 
@@ -31,13 +32,18 @@ static DEFINE_SPINLOCK(suspend_lock);
  * FLOOR is 5msec to capture up to 3 re-draws
  * per frame for 60fps content.
  */
-#define FLOOR		        3350
+#define FLOOR		        5000
 /*
  * MIN_BUSY is 1 msec for the sample to be sent
  */
 #define MIN_BUSY		1000
 #define MAX_TZ_VERSION		0
 
+/*
+ * CEILING is 50msec, larger than any standard
+ * frame length, but less than the idle timer.
+ */
+#define CEILING			50000
 #define TZ_RESET_ID		0x3
 #define TZ_UPDATE_ID		0x4
 #define TZ_INIT_ID		0x6
@@ -330,6 +336,7 @@ static inline int devfreq_get_freq_level(struct devfreq *devfreq,
 	return -EINVAL;
 }
 
+extern int kp_active_mode(void);
 static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 {
 	int result = 0;
@@ -348,12 +355,7 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 
 	*freq = stats.current_frequency;
 	priv->bin.total_time += stats.total_time;
-
-	if ((unsigned int)(priv->bin.busy_time + stats.busy_time) >= FLOOR) {
-		priv->bin.busy_time += stats.busy_time * 4;
-	} else {
-		priv->bin.busy_time += stats.busy_time * 4 / 2;
-	}
+	priv->bin.busy_time += stats.busy_time;
 
 	if (stats.private_data)
 		context_count =  *((int *)stats.private_data);
@@ -378,12 +380,34 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 		return level;
 	}
 
-	scm_data[0] = level;
-	scm_data[1] = priv->bin.total_time;
-	scm_data[2] = priv->bin.busy_time;
-	scm_data[3] = context_count;
-	__secure_tz_update_entry3(scm_data, sizeof(scm_data),
-				&val, sizeof(val), priv);
+	/*
+	 * If there is an extended block of busy processing,
+	 * increase frequency.  Otherwise run the normal algorithm.
+	 */
+	if (!priv->disable_busy_time_burst &&
+			priv->bin.busy_time > CEILING) {
+		val = -1 * level;
+	} else {
+		unsigned int multi;
+
+		scm_data[0] = level;
+		scm_data[1] = priv->bin.total_time;
+		switch (kp_active_mode()) {
+		case 1:
+			multi = 100;
+			break;
+		case 3:
+			multi = 150;
+			break;
+		default:
+			multi = 120;
+			break;
+		}
+		scm_data[2] = priv->bin.busy_time * (multi / 100);
+		scm_data[3] = context_count;
+		__secure_tz_update_entry3(scm_data, sizeof(scm_data),
+					&val, sizeof(val), priv);
+	}
 	priv->bin.total_time = 0;
 	priv->bin.busy_time = 0;
 

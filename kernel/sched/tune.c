@@ -15,6 +15,10 @@
 bool schedtune_initialized = false;
 extern struct reciprocal_value schedtune_spc_rdiv;
 
+#ifdef CONFIG_KPROFILES
+extern int kp_active_mode(void);
+#endif
+
 /* We hold schedtune boost in effect for at least this long */
 #define SCHEDTUNE_BOOST_HOLD_NS 50000000ULL
 
@@ -475,40 +479,23 @@ int schedtune_cpu_boost(int cpu)
 	return bg->boost_max;
 }
 
-static inline int schedtune_adj_ta(struct task_struct *p)
-{
-	struct schedtune *st;
-	char name_buf[NAME_MAX + 1];
-	int adj = p->signal->oom_score_adj;
-
-	/* We only care about adj == 0 */
-	if (adj != 0)
-		return 0;
-
-	/* Don't touch kthreads */
-	if (p->flags & PF_KTHREAD)
-		return 0;
-
-	st = task_schedtune(p);
-	cgroup_name(st->css.cgroup, name_buf, sizeof(name_buf));
-	if (!strncmp(name_buf, "top-app", strlen("top-app"))) {
-		pr_debug("top app is %s with adj %i\n", p->comm, adj);
-		return 1;
-	}
-
-	return 0;
-}
-
 int schedtune_task_boost(struct task_struct *p)
 {
+	struct schedtune *st;
 	int task_boost;
 
 	if (unlikely(!schedtune_initialized))
 		return 0;
 
+#ifdef CONFIG_KPROFILES
+	if (kp_active_mode() == 1)
+		return 0;
+#endif
+
 	/* Get task boost value */
 	rcu_read_lock();
-	task_boost = schedtune_adj_ta(p);
+	st = task_schedtune(p);
+	task_boost = st->boost;
 	rcu_read_unlock();
 
 	return task_boost;
@@ -540,6 +527,11 @@ int schedtune_prefer_idle(struct task_struct *p)
 	if (unlikely(!schedtune_initialized))
 		return 0;
 
+#ifdef CONFIG_KPROFILES
+	if (kp_active_mode() == 1)
+		return 0;
+#endif
+
 	/* Get prefer_idle value */
 	rcu_read_lock();
 	st = task_schedtune(p);
@@ -553,6 +545,11 @@ static u64
 prefer_idle_read(struct cgroup_subsys_state *css, struct cftype *cft)
 {
 	struct schedtune *st = css_st(css);
+
+#ifdef CONFIG_KPROFILES
+	if (kp_active_mode() == 1)
+		return 0;
+#endif
 
 	return st->prefer_idle;
 }
@@ -571,6 +568,11 @@ static s64
 boost_read(struct cgroup_subsys_state *css, struct cftype *cft)
 {
 	struct schedtune *st = css_st(css);
+
+#ifdef CONFIG_KPROFILES
+	if (kp_active_mode() == 1)
+		return 0;
+#endif
 
 	return st->boost;
 }

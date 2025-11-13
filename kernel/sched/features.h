@@ -27,16 +27,10 @@
 #define SCHED_FEAT_LAST_BUDDY 1
 
 /*
- * skip buddy i.e task called yield() is always skipped and the
- * next entity is selected to run irrespective of the vruntime
- */
-#define SCHED_FEAT_STRICT_SKIP_BUDDY 1
-
-/*
  * Consider buddies to be cache hot, decreases the likelyness of a
  * cache buddy being migrated away, increases cache locality.
  */
-#define SCHED_FEAT_CACHE_HOT_BUDDY 0
+#define SCHED_FEAT_CACHE_HOT_BUDDY 1
 
 /*
  * Allow wakeup-time preemption of the current task:
